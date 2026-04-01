@@ -65,6 +65,16 @@
   :type '(directory)
   :group 'bitbake)
 
+(defcustom bitbake-bin-directory "bitbake/bin"
+  "The directory of the bitbake executables in `bitbake-poky-directory'."
+  :type '(directory)
+  :group 'bitbake)
+
+(defcustom bitbake-script-directory "scripts"
+  "The name of the scripts directory in `bitbake-poky-directory'."
+  :type '(directory)
+  :group 'bitbake)
+
 (defcustom bitbake-server-host nil
   "The name or IP address to use as host address of the server process.
 If set, the server accepts remote connections; otherwise it is local."
@@ -188,16 +198,20 @@ here.  Calling bitbake-flash will copy the hdd image on the usb disk if present.
   "Add POKY-DIRECTORY to PATH environment variable and set BBPATH to BUILD-DIRECTORY."
   (setenv "BBPATH" build-directory)
   (setenv "BUILDDIR" build-directory)
-  (bitbake-add-path (format "%sscripts" poky-directory))
-  (bitbake-add-path (format "%sbitbake/bin" poky-directory))
+  (bitbake-add-path (concat poky-directory
+                            bitbake-script-directory))
+  (bitbake-add-path (concat poky-directory
+                            bitbake-bin-directory))
   (message "Bitbake: updated path to %s" (getenv "PATH")))
 
 (defun bitbake-cleanup-environment (poky-directory)
   "Remove POKY-DIRECTORY from PATH environment variable and unset BBPATH."
   (setenv "BBPATH")
   (setenv "BUILDDIR")
-  (bitbake-remove-path (format "%sscripts" poky-directory))
-  (bitbake-remove-path (format "%sbitbake/bin" poky-directory)))
+  (bitbake-remove-path (concat poky-directory
+                               bitbake-script-directory))
+  (bitbake-remove-path (concat poky-directory
+                               bitbake-bin-directory)))
 
 (defun bitbake-shell-command (command)
   "Run shell COMMAND in bitbake buffer.
