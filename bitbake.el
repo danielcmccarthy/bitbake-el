@@ -78,7 +78,7 @@
   "The name or IP address to use as host address of the server process.
 If set, the server accepts remote connections; otherwise it is local."
   :type '(choice
-          (string :tag "Name ro IP address")
+          (string :tag "Name or IP address")
           (const :tag "Local" nil))
   :group 'bitbake)
 
@@ -375,7 +375,7 @@ If FETCH is non-nil, invalidate cache and fetch the recipes list again."
 
 (defun bitbake-fetch-recipe-tasks (recipe)
   "Fetch the list of bitbake tasks for RECIPE."
-  (message "Bittbake: fetching recipe %s tasks" recipe)
+  (message "Bitbake: fetching recipe %s tasks" recipe)
   (with-current-buffer (bitbake-capture-buffer)
     (shell-command (format "bitbake %s -c listtasks" recipe) (bitbake-capture-buffer))
     (bitbake-parse-recipe-tasks (current-buffer))))
@@ -414,7 +414,7 @@ If FETCH is non-nil, invalidate cache and fetch the tasks again."
 
 (defun bitbake-fetch-recipe-variables (recipe)
   "Fetch bitbake variables for RECIPE."
-    (message "Bittbake: fetching recipe %s variables" recipe)
+    (message "Bitbake: fetching recipe %s variables" recipe)
   (with-temp-buffer
     (shell-command (format "bitbake -e %s 2>&1" recipe) (current-buffer))
     (bitbake-parse-recipe-variables (current-buffer))))
@@ -446,7 +446,7 @@ If FETCH is non-nil, invalidate cache and fetch the variables again."
            (random (expt 16 6))))
 
 (defun bitbake-recipe-taint-task (recipe task)
-  "Taint RECIPE TASK as a workarround for bitbake -f not working in server mode."
+  "Taint RECIPE TASK as a workaround for bitbake -f not working in server mode."
   (let ((taint-file-name (format "%s.do_%s.taint" (bitbake-recipe-variable "STAMP" recipe) task)))
     (with-temp-file taint-file-name
       (insert (bitbake-uuid)))))
@@ -551,7 +551,7 @@ If FORCE is non-nil, force running the task."
 
 ;;;###autoload
 (defun bitbake-fetch (recipe)
-  "Run bitbake install on RECIPE."
+  "Run bitbake fetch on RECIPE."
   (interactive (list (bitbake-read-recipe)))
   (bitbake-task "fetch" recipe t))
 
