@@ -283,7 +283,7 @@ binary and BUILD-DIRECTORY as the build directory."
   (setq-local kill-buffer-query-functions '())
   (let* ((buffer (get-buffer "*bitbake*"))
          (process (get-buffer-process buffer)))
-    (when process (kill-process))
+    (when process (kill-process process))
     (when buffer (kill-buffer buffer))))
 
 (defun bitbake-parse-recipes (buffer)
