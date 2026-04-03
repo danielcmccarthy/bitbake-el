@@ -287,9 +287,8 @@ binary and BUILD-DIRECTORY as the build directory."
     (when buffer (kill-buffer buffer))))
 
 (defun bitbake-parse-recipes (buffer)
-  "Parse recipes in a BUFFER given EVENT."
+  "Parse recipes in BUFFER."
   (with-current-buffer buffer
-    (goto-char (point-min))
     (let ((recipes))
       (while (re-search-forward "^\\([^[:blank:]]+\\) +\\([[:digit:]]*\\):\\([^[:blank:]]+\\)-\\([^[:blank:]]+\\)" nil t)
           (setq recipes (cons (list (match-string 1) (match-string 2) (match-string 3) (match-string 4)) recipes)))
@@ -298,18 +297,27 @@ binary and BUILD-DIRECTORY as the build directory."
 (defun bitbake-s-command (command message)
   "Run COMMAND synchronously, sending output to bitbake-capture-buffer.
 
-If COMMAND fails, raise user error with MESSAGE."
-  (unless (zerop (shell-command command (bitbake-capture-buffer)))
-    (user-error "%s: %s" message
-                (if (getenv "BBSERVER")
-                    (buffer-string) "server is not started"))))
+If COMMAND fails, raise `user-error' with MESSAGE."
+  (let ((eb (get-buffer-create "*bitbake-error*")))
+    (with-current-buffer eb
+      (erase-buffer))
+    (with-current-buffer (bitbake-capture-buffer)
+      (goto-char (point-max))
+      (unless (shell-command command
+                             (current-buffer)
+                             eb)
+        (user-error "%s: %s"
+                    message
+                    (if (getenv "BBSERVER")
+                        (with-current-buffer eb
+                          (buffer-string))
+                      "server is not started"))))))
 
 (defun bitbake-fetch-recipes ()
   "Fetch the availables bitbake recipes for the POKY-DIRECTORY and the BUILD-DIRECTORY."
   (message "Bitbake: fetching recipes")
-  (with-current-buffer (bitbake-capture-buffer)
-    (bitbake-s-command "bitbake -s 2>&1" "Unable to fetch recipes")
-    (bitbake-parse-recipes (current-buffer))))
+  (bitbake-s-command "bitbake -s" "Unable to fetch recipes")
+  (bitbake-parse-recipes (bitbake-capture-buffer)))
 
 (defun bitbake-recipes (&optional fetch)
   "Return the bitbake recipes list.
@@ -365,9 +373,9 @@ If FETCH is non-nil, invalidate cache and fetch the recipes list again."
 (defun bitbake-parse-recipe-tasks (buffer)
   "Parse the list of recipe tasks in BUFFER."
   (with-current-buffer buffer
-    (goto-char (point-min))
-    (when (re-search-forward ".*ERROR.*: \\(\x1b\\[..?m\\)?\\(.*\\)\\(\x1b\\[..?m\\)?" nil t)
-          (error (format "Bitbake: unable to fetch tasks - %s" (match-string 2))))
+    (let ((case-fold-search nil))
+      (when (re-search-forward ".*ERROR.*: \\(\x1b\\[..?m\\)?\\(.*\\)\\(\x1b\\[..?m\\)?" nil t)
+        (error (format "Bitbake: unable to fetch tasks - %s" (match-string 2)))))
     (let ((tasks))
       (while (re-search-forward "^do_\\([^[:blank:]\n]+\\)" nil t)
         (setq tasks (cons (match-string 1) tasks)))
@@ -376,9 +384,8 @@ If FETCH is non-nil, invalidate cache and fetch the recipes list again."
 (defun bitbake-fetch-recipe-tasks (recipe)
   "Fetch the list of bitbake tasks for RECIPE."
   (message "Bitbake: fetching recipe %s tasks" recipe)
-  (with-current-buffer (bitbake-capture-buffer)
-    (shell-command (format "bitbake %s -c listtasks" recipe) (bitbake-capture-buffer))
-    (bitbake-parse-recipe-tasks (current-buffer))))
+  (bitbake-s-command (format "bitbake %s -c listtasks" recipe) "Unable to fetch tasks")
+  (bitbake-parse-recipe-tasks (bitbake-capture-buffer)))
 
 (defun bitbake-recipe-tasks (recipe &optional fetch)
   "Return the bitbake tasks for RECIPE.
@@ -397,27 +404,26 @@ If FETCH is non-nil, invalidate cache and fetch the tasks again."
 (defun bitbake-parse-recipe-variables (buffer)
   "Parse bitbake variables BUFFER."
   (with-current-buffer buffer
-    (goto-char (point-min))
-    (re-search-forward "^[[:alnum:]_:]+()[[:space:]]+{")
-    (beginning-of-line)
-    (let ((limit (point))
-          (variables))
-      (goto-char (point-min))
-      (while (re-search-forward "^\\([[:alnum:]~+.${}/_:-]+\\)=\"\\([^\"]*\\)" limit t)
-        (let ((name (substring-no-properties (match-string 1)))
-              (value (substring-no-properties (match-string 2))))
-          (while (equal (string (char-before)) "\\")
-            (re-search-forward "\\(\"[^\"]*\\)" limit t)
-            (setq value (concat (substring value 0 -1) (substring-no-properties (match-string 1)))))
-          (setq variables (cons (cons name value) variables))))
-      variables)))
+    (let ((start (point))
+          (limit (mark)))
+      (re-search-forward "^[[:alnum:]_:]+()[[:space:]]+{")
+      (beginning-of-line)
+      (let ((variables))
+        (goto-char start)
+        (while (re-search-forward "^\\([[:alnum:]~+.${}/_:-]+\\)=\"\\([^\"]*\\)" limit t)
+          (let ((name (substring-no-properties (match-string 1)))
+                (value (substring-no-properties (match-string 2))))
+            (while (equal (string (char-before)) "\\")
+              (re-search-forward "\\(\"[^\"]*\\)" limit t)
+              (setq value (concat (substring value 0 -1) (substring-no-properties (match-string 1)))))
+            (setq variables (cons (cons name value) variables))))
+        variables))))
 
 (defun bitbake-fetch-recipe-variables (recipe)
   "Fetch bitbake variables for RECIPE."
-    (message "Bitbake: fetching recipe %s variables" recipe)
-  (with-temp-buffer
-    (shell-command (format "bitbake -e %s 2>&1" recipe) (current-buffer))
-    (bitbake-parse-recipe-variables (current-buffer))))
+  (message "Bitbake: fetching recipe %s variables" recipe)
+  (bitbake-s-command (format "bitbake -e %s" recipe) "Unable to fetch variables")
+  (bitbake-parse-recipe-variables (bitbake-capture-buffer)))
 
 (defun bitbake-recipe-variables (recipe &optional fetch)
   "Return the bitbake variables for RECIPE.
