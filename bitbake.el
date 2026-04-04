@@ -127,6 +127,18 @@ Otherwise, devshell will launch an external terminal app."
   :type '(boolean)
   :group 'bitbake)
 
+(defcustom bitbake-devshell-function 'bitbake-devshell-shell
+  "Function to call to run a devshell.
+
+The function is called with two arguments: the title of a new buffer,
+and an initial command to run. `default-directory' will be bound to the
+intended working directory of the devshell."
+  :type '(choice (function-item bitbake-devshell-shell)
+                 (function-item bitbake-devshell-term)
+                 (restricted-sexp :match-alternatives
+                                  (functionp)))
+  :group 'bitbake)
+
 ;;; Local variables
 (defvar bitbake-current-server-host nil "The actual host name or IP address of the bitbake server instance.")
 (defvar bitbake-current-server-port nil "The actual port of the bitbake server instance.")
@@ -691,26 +703,30 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
   "The name of a file to delete when the current buffer is killed.")
 
 (defun bitbake-devshell (flag-file)
-  "Open a shell buffer for the do_devshell task.
+  "Open a terminal buffer for the do_devshell task.
 
 Expects three arguments in `server-eval-args-left': the buffer name; an
 initial command to run; and a working directory. FLAG-FILE is a temp
-file to delete, which signals bitbake that the shell is finished."
+file to delete, which signals bitbake that the shell is finished.
+
+To specify which terminal mode to use (`shell-mode', `term-mode', etc.),
+customize `bitbake-devshell-function'."
   (condition-case err
       (let* ((title (pop server-eval-args-left))
              (command (pop server-eval-args-left))
              (cwd (pop server-eval-args-left)))
+        (unless (and title command cwd)
+          (error "missing arguments"))
         (message "Bitbake: devshell '%s' in '%s'" title cwd)
         (let ((default-directory cwd))
-          (shell (get-buffer-create (format "*%s*" title)))
-          (setq-local bitbake-devshell-flag-file flag-file)
-          (comint-send-string (get-buffer-process (current-buffer))
-                              (concat command "\n")))
+          (funcall bitbake-devshell-function (format "*%s*" title) command)
+          (setq-local bitbake-devshell-flag-file flag-file))
         (add-hook 'kill-buffer-hook 'bitbake-devshell-finish)
         (message "Bitbake: When finished, kill this buffer to complete the devshell task."))
     (error
-     (message "Bitbake: error setting up devshell: %s" err)
-     (delete-file flag-file))))
+     (delete-file flag-file)
+     (signal (car err)
+             (cons "Bitbake: error setting up devshell" (cdr err))))))
 
 (defun bitbake-devshell-finish ()
   (when bitbake-devshell-flag-file
@@ -721,6 +737,19 @@ file to delete, which signals bitbake that the shell is finished."
   (when bitbake-open-devshell-in-emacs
     (format "-R %s" (expand-file-name bitbake-devshell-fragment
                                       bitbake-load-base))))
+
+(defun bitbake-devshell-shell (title command)
+  "Open a `shell-mode' buffer for the devshell task."
+  (shell (get-buffer-create title))
+  (comint-send-string (get-buffer-process (current-buffer))
+                      (concat command "\n")))
+
+(defun bitbake-devshell-term (title command)
+  "Open a `term-mode' buffer for the devshell task."
+  (term "bash")
+  (term-send-string (get-buffer-process (current-buffer))
+                    (concat command "\n"))
+  (rename-buffer title))
 
 ;;; Mode definition
 

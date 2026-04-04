@@ -5,6 +5,11 @@
 # flag for Emacs to signal when the terminal buffer has been killed.
 
 flag=$(mktemp)
-touch "$flag" && emacsclient -u --eval "(bitbake-devshell \"$flag\")" "$@" && while [ -e "$flag" ]; do sleep 1; done
-# cleanup in case emacsclient failed.
-rm -f "$flag"
+if emacsclient -u --eval "(bitbake-devshell \"$flag\")" "$@"
+then
+    while [ -e "$flag" ]; do sleep 1; done
+else
+    echo "emacsclient failed; aborting" > /dev/stderr
+    rm -f "$flag"
+    exit 1
+fi
