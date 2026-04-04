@@ -120,6 +120,13 @@ here.  Calling bitbake-flash will copy the hdd image on the usb disk if present.
   :type '(string)
   :version "24.1")
 
+(defcustom bitbake-open-devshell-in-emacs t
+  "If true, arrange for devshell to open an Emacs shell buffer.
+
+Otherwise, devshell will launch an external terminal app."
+  :type '(boolean)
+  :group 'bitbake)
+
 ;;; Local variables
 (defvar bitbake-current-server-host nil "The actual host name or IP address of the bitbake server instance.")
 (defvar bitbake-current-server-port nil "The actual port of the bitbake server instance.")
@@ -137,7 +144,11 @@ here.  Calling bitbake-flash will copy the hdd image on the usb disk if present.
 (defvar bitbake-last-disk-image nil "The last build disk image file.")
 (defvar bitbake-buffer-prompt "/////---bitbake$ " "The prompt used in the bitbake buffer.")
 (defvar bitbake-buffer-prompt-regexp (concat "^" (regexp-quote bitbake-buffer-prompt)) "A regexp matching the prompt.")
-
+(defconst bitbake-load-base (file-name-directory load-file-name))
+(defconst bitbake-devshell-fragment "bitbake-el-devshell.conf"
+  "Config fragment to use emacsclient in devshell command.")
+(defconst bitbake-devshell-launcher "devshell-launcher.sh"
+  "Launcher script to run emacsclient in OE_TERMINAL_CUSTOMCMD.")
 (make-variable-buffer-local 'bitbake-last-disk-image)
 
 ;;; Minor mode functions
@@ -197,6 +208,8 @@ here.  Calling bitbake-flash will copy the hdd image on the usb disk if present.
   "Add POKY-DIRECTORY to PATH environment variable and set BBPATH to BUILD-DIRECTORY."
   (setenv "BBPATH" build-directory)
   (setenv "BUILDDIR" build-directory)
+  (setenv "EMACS_BITBAKE_DEVSHELL" (expand-file-name bitbake-devshell-launcher
+                                                     bitbake-load-base))
   (bitbake-add-path (concat poky-directory
                             bitbake-script-directory))
   (bitbake-add-path (concat poky-directory
@@ -207,6 +220,7 @@ here.  Calling bitbake-flash will copy the hdd image on the usb disk if present.
   "Remove POKY-DIRECTORY from PATH environment variable and unset BBPATH."
   (setenv "BBPATH")
   (setenv "BUILDDIR")
+  (setenv "EMACS_BITBAKE_DEVSHELL")
   (bitbake-remove-path (concat poky-directory
                                bitbake-script-directory))
   (bitbake-remove-path (concat poky-directory
@@ -528,7 +542,11 @@ If FORCE is non-nil, force running the task."
   (bitbake-command
     (when force
       (bitbake-recipe-taint-task recipe task))
-    (bitbake-shell-command (format "bitbake %s %s -c %s" recipe (if force "-f" "") task))))
+    (bitbake-shell-command (format "bitbake %s %s %s -c %s"
+                                   recipe
+                                   (if force "-f" "")
+                                   (bitbake--devshell-argument)
+                                   task))))
 
 ;;;###autoload
 (defun bitbake-recipe (recipe)
@@ -666,6 +684,43 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
     (when (and (file-exists-p bitbake-flash-device) bitbake-last-disk-image)
       (message "Bitbake: copy image to %s" bitbake-flash-device)
       (bitbake-shell-command (format "dd if=%s of=%s bs=32M" bitbake-last-disk-image bitbake-flash-device)))))
+
+;;; devshell backend.
+
+(defvar-local bitbake-devshell-flag-file nil
+  "The name of a file to delete when the current buffer is killed.")
+
+(defun bitbake-devshell (flag-file)
+  "Open a shell buffer for the do_devshell task.
+
+Expects three arguments in `server-eval-args-left': the buffer name; an
+initial command to run; and a working directory. FLAG-FILE is a temp
+file to delete, which signals bitbake that the shell is finished."
+  (condition-case err
+      (let* ((title (pop server-eval-args-left))
+             (command (pop server-eval-args-left))
+             (cwd (pop server-eval-args-left)))
+        (message "Bitbake: devshell '%s' in '%s'" title cwd)
+        (let ((default-directory cwd))
+          (shell (get-buffer-create (format "*%s*" title)))
+          (setq-local bitbake-devshell-flag-file flag-file)
+          (comint-send-string (get-buffer-process (current-buffer))
+                              (concat command "\n")))
+        (add-hook 'kill-buffer-hook 'bitbake-devshell-finish)
+        (message "Bitbake: When finished, kill this buffer to complete the devshell task."))
+    (error
+     (message "Bitbake: error setting up devshell: %s" err)
+     (delete-file flag-file))))
+
+(defun bitbake-devshell-finish ()
+  (when bitbake-devshell-flag-file
+    (message "Bitbake: cleaning up devshell buffer '%s'" (buffer-name))
+    (delete-file bitbake-devshell-flag-file)))
+
+(defun bitbake--devshell-argument ()
+  (when bitbake-open-devshell-in-emacs
+    (format "-R %s" (expand-file-name bitbake-devshell-fragment
+                                      bitbake-load-base))))
 
 ;;; Mode definition
 
