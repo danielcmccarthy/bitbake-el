@@ -139,6 +139,14 @@ intended working directory of the devshell."
                                   (functionp)))
   :group 'bitbake)
 
+(defcustom bitbake-yocto-manual-url
+  "https://docs.yoctoproject.org/ref-manual/variables.html#term-%s"
+  "URL of the Yocto reference manual.
+
+Should be a format string with one '\\=%s' directive for a variable name."
+  :type '(string)
+  :group 'bitbake)
+
 ;;; Local variables
 (defvar bitbake-current-server-host nil "The actual host name or IP address of the bitbake server instance.")
 (defvar bitbake-current-server-port nil "The actual port of the bitbake server instance.")
@@ -836,6 +844,29 @@ For detail, see `comment-dwim'."
       (indent-line-to tab-width)
     (indent-line-to 0)))
 
+;; help
+
+(defun bitbake-browse-variable-documentation (variable)
+  "Browse Yocto reference manual for VARIABLE.
+
+To use a specific version of the reference manual, customize `bitbake-yocto-manual-url'."
+  (interactive (list (let ((var-at-point (save-excursion
+                                           (save-match-data
+                                             (re-search-backward "^\\|[[:space:]]")
+                                             (and (looking-at "\\_<[_[:upper:]]+\\_>")
+                                                  (match-string-no-properties 0))))))
+                       (read-string (concat "Yocto/Bitbake variable"
+                                            (if var-at-point
+                                                (format " (default %s)" var-at-point)
+                                              "")
+                                            ": ")
+                                    nil
+                                    'bitbake-variable-documentation-history
+                                    var-at-point))))
+  (if (string-empty-p variable)
+      (message "No variable specified.")
+    (browse-url (format bitbake-yocto-manual-url variable))))
+
 ;;;###autoload
 (define-derived-mode bitbake-mode prog-mode
   "A mode for editing bitbake recipe files."
@@ -844,6 +875,7 @@ For detail, see `comment-dwim'."
   (setq mode-name "BitBake")
   (set (make-local-variable 'indent-line-function) 'bitbake-indent-line)
   (define-key bitbake-mode-map [remap comment-dwim] 'bitbake-comment-dwim)
+  (define-key bitbake-mode-map [(control c) (control f)] 'bitbake-browse-variable-documentation)
   (set (make-local-variable 'comment-start) "# ")
   (set (make-local-variable 'comment-end) "")
   )
