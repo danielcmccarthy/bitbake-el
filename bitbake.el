@@ -324,20 +324,23 @@ binary and BUILD-DIRECTORY as the build directory."
   "Run COMMAND synchronously, sending output to bitbake-capture-buffer.
 
 If COMMAND fails, raise `user-error' with MESSAGE."
-  (let ((eb (get-buffer-create "*bitbake-error*")))
-    (with-current-buffer eb
-      (erase-buffer))
-    (with-current-buffer (bitbake-capture-buffer)
-      (goto-char (point-max))
-      (unless (shell-command command
-                             (current-buffer)
-                             eb)
-        (user-error "%s: %s"
-                    message
-                    (if (getenv "BBSERVER")
-                        (with-current-buffer eb
-                          (buffer-string))
-                      "server is not started"))))))
+  (with-current-buffer (bitbake-capture-buffer)
+    (goto-char (point-max))
+    (let* ((p (point))
+           (rc (call-process-shell-command
+                command
+                nil
+                (list (current-buffer) t))))
+      (if (not (equal 0 rc))
+          (error "%s: %s"
+                 message
+                 (if (getenv "BBSERVER")
+                     (format "see %s for details" (buffer-name))
+                   "server is not started"))
+        ;; Mark the output region for the parser function like
+        ;; `shell-command' does.
+        (set-mark (point))
+        (goto-char p)))))
 
 (defun bitbake-fetch-recipes ()
   "Fetch the availables bitbake recipes for the POKY-DIRECTORY and the BUILD-DIRECTORY."
