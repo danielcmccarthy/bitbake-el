@@ -829,7 +829,7 @@ For detail, see `comment-dwim'."
 (defvar bitbake-font-lock-defaults
   `((
      ;; fakeroot python do_foo() {
-     ("\\b\\(include\\|require\\|inherit\\|python\\|addtask\\|export\\|fakeroot\\|unset\\)\\b" . font-lock-keyword-face)
+     ("\\b\\(include\\(_all\\)?\\|require\\|inherit\\(_defer\\)?\\|python\\|addtask\\|export\\|fakeroot\\|unset\\)\\b" . font-lock-keyword-face)
      ;; do_install_append() {
      ("^\\(fakeroot *\\)?\\(python *\\)?\\([a-zA-Z0-9\-_+.${}/~:]+\\) *( *) *{" 3 font-lock-function-name-face)
      ;; do_deploy[depends] ??=
