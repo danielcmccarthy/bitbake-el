@@ -393,7 +393,7 @@ If FETCH is non-nil, invalidate cache and fetch the recipes list again."
 
 (defun bitbake-read-recipe ()
   "Read a recipe name in the minibuffer, with completion."
-  (let ((default (or (bitbake-buffer-recipe) (car (last bitbake-recipe-history)))))
+  (let ((default (or (bitbake-buffer-recipe) (car-safe bitbake-recipe-history))))
     (completing-read "Recipe: " (bitbake-recipe-names) nil t default 'bitbake-recipe-history)))
 
 (defun bitbake-image-names ()
@@ -405,7 +405,7 @@ If FETCH is non-nil, invalidate cache and fetch the recipes list again."
 
 (defun bitbake-read-image ()
   "Read a image name in the minibuffer, with completion."
-  (completing-read "Image: " (bitbake-image-names) nil t (car (last bitbake-image-history)) 'bitbake-image-history))
+  (completing-read "Image: " (bitbake-image-names) nil t (car-safe bitbake-image-history) 'bitbake-image-history))
 
 (defun bitbake-parse-recipe-tasks (buffer)
   "Parse the list of recipe tasks in BUFFER."
@@ -436,7 +436,7 @@ If FETCH is non-nil, invalidate cache and fetch the tasks again."
 (defun bitbake-read-tasks (recipe)
   "Read a task name in the minibuffer, with completion for task RECIPE."
   (let ((tasks (bitbake-recipe-tasks recipe)))
-    (completing-read "Task: " tasks nil t (car (last bitbake-task-history)) 'bitbake-task-history)))
+    (completing-read "Task: " tasks nil t (car-safe bitbake-task-history) 'bitbake-task-history)))
 
 (defun bitbake-parse-recipe-variables (buffer)
   "Parse bitbake variables BUFFER."
