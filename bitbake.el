@@ -833,7 +833,7 @@ For detail, see `comment-dwim'."
      ;; do_install_append() {
      ("^\\(fakeroot *\\)?\\(python *\\)?\\([a-zA-Z0-9\-_+.${}/~:]+\\) *( *) *{" 3 font-lock-function-name-face)
      ;; do_deploy[depends] ??=
-     ("^\\(export *\\)?\\([a-zA-Z0-9\-_+.${}/~]+\\(\\[[a-zA-Z0-9\-_+.${}/~]+\\]\\)?\\(:[a-zA-Z0-9\-_+.${}/~]+\\)?\\) *\\(=\\|\\?=\\|\\?\\?=\\|:=\\|+=\\|=+\\|.=\\|=.\\)" 2 font-lock-variable-name-face)
+     ("^\\(export *\\)?\\([a-zA-Z0-9\-_+.${}/~]+\\(\\[[a-zA-Z0-9\-_+.${}/~]+\\]\\)?\\(:[a-zA-Z0-9\-_+.${}/~]+\\)*\\) *\\(=\\|\\?=\\|\\?\\?=\\|:=\\|+=\\|=+\\|.=\\|=.\\)" 2 font-lock-variable-name-face)
      )))
 
 (defun bitbake-indent-line ()
