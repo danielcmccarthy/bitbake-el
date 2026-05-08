@@ -153,6 +153,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defvar bitbake-current-server-port nil "The actual port of the bitbake server instance.")
 (defvar bitbake-current-poky-directory nil "The actual directory holding bitbake binaries.")
 (defvar bitbake-current-build-directory nil "The actual build directory.")
+(defvar bitbake-current-remote-environment nil "List of environment variables used in remote bitbake commands.")
 (defvar bitbake-recipes-cache '() "Cache of bitbake recipes.")
 (defvar bitbake-recipe-variables-cache '() "Cache of bitbake recipe variables.")
 (defvar bitbake-recipe-tasks-cache '() "Cache of bitbake recipe variables.")
@@ -195,20 +196,27 @@ Should be a format string with one '\\=%s' directive for a variable name."
 
 (defun bitbake-buffer ()
   "Fetch or create the bitbake buffer."
-  (let ((buffer-name "*bitbake*")
-        (default-directory bitbake-build-directory))
+  (let ((buffer-name "*bitbake*"))
     (or (get-buffer buffer-name)
-        (progn
-          (let ((buffer (shell buffer-name)))
-            (with-current-buffer buffer
-              (setq-local comint-move-point-for-output t)
-              (setq-local comint-prompt-regexp bitbake-buffer-prompt-regexp)
-              (process-send-string (current-buffer) (format "export PS1='%s' && cd %s\n" bitbake-buffer-prompt default-directory))
-              (bitbake-wait-for-prompt)
-              (comint-send-input nil t)
-              (erase-buffer)
-              (bitbake-wait-for-prompt)
-              buffer))))))
+        (let* ((remote-path (or (-find (lambda (v) (string-prefix-p "PATH=" v))
+                                       bitbake-current-remote-environment)
+                                ""))
+               (tramp-remote-process-environment
+                (-remove-item remote-path bitbake-current-remote-environment))
+               (default-directory bitbake-build-directory)
+               (buffer (shell buffer-name)))
+          (with-current-buffer buffer
+            (setq-local comint-move-point-for-output t)
+            (setq-local comint-prompt-regexp bitbake-buffer-prompt-regexp)
+            (process-send-string (current-buffer) (format "export PS1='%s' %s && cd %s\n"
+                                                          bitbake-buffer-prompt
+                                                          remote-path
+                                                          default-directory))
+            (bitbake-wait-for-prompt)
+            (comint-send-input nil t)
+            (erase-buffer)
+            (bitbake-wait-for-prompt)
+            buffer)))))
 
 (defun bitbake-capture-buffer ()
   "Fetch or create the bitbake capture buffer."
@@ -226,27 +234,50 @@ Should be a format string with one '\\=%s' directive for a variable name."
     (when (member path components)
       (setenv "PATH" (s-join ":" (delete path components))))))
 
-(defun bitbake-setup-environment (poky-directory build-directory)
+(defun bitbake-setup-environment (poky-directory build-directory server-address)
   "Add POKY-DIRECTORY to PATH environment variable and set BBPATH to BUILD-DIRECTORY."
-  (setenv "BBPATH" build-directory)
-  (setenv "BUILDDIR" build-directory)
-  (setenv "EMACS_BITBAKE_DEVSHELL" (expand-file-name bitbake-devshell-launcher
-                                                     bitbake-load-base))
-  (bitbake-add-path (concat poky-directory
-                            bitbake-script-directory))
-  (bitbake-add-path (concat poky-directory
-                            bitbake-bin-directory))
-  (message "Bitbake: updated path to %s" (getenv "PATH")))
+  (cond ((file-remote-p poky-directory)
+         (let* ((remote-base (tramp-file-name-localname
+                              (tramp-dissect-file-name poky-directory)))
+                (remote-build (tramp-file-name-localname
+                               (tramp-dissect-file-name build-directory)))
+                (remote-path `(,(concat remote-base
+                                        bitbake-script-directory)
+                               ,(concat remote-base
+                                        bitbake-bin-directory)))
+                (remote-env `(,(format "BBPATH=%s" remote-build)
+                              ,(format "BUILDDIR=%s" remote-build)
+                              ,(format "BBSERVER=%s" server-address))))
+           (setq bitbake-current-remote-environment
+                 (cons (format "PATH=%s:$PATH"
+                               (string-join remote-path ":"))
+                       remote-env))
+           (message "Bitbake: configured connection for %s" remote-base)))
+        (t
+         (setenv "BBPATH" build-directory)
+         (setenv "BUILDDIR" build-directory)
+         (setenv "BBSERVER" server-address)
+         (setenv "EMACS_BITBAKE_DEVSHELL" (expand-file-name bitbake-devshell-launcher
+                                                            bitbake-load-base))
+         (bitbake-add-path (concat poky-directory
+                                   bitbake-script-directory))
+         (bitbake-add-path (concat poky-directory
+                                   bitbake-bin-directory))
+         (message "Bitbake: updated path to %s" (getenv "PATH")))))
 
 (defun bitbake-cleanup-environment (poky-directory)
   "Remove POKY-DIRECTORY from PATH environment variable and unset BBPATH."
-  (setenv "BBPATH")
-  (setenv "BUILDDIR")
-  (setenv "EMACS_BITBAKE_DEVSHELL")
-  (bitbake-remove-path (concat poky-directory
-                               bitbake-script-directory))
-  (bitbake-remove-path (concat poky-directory
-                               bitbake-bin-directory)))
+  (cond ((file-remote-p poky-directory)
+         (setq bitbake-current-remote-environment nil))
+        (t
+         (setenv "BBPATH")
+         (setenv "BUILDDIR")
+         (setenv "EMACS_BITBAKE_DEVSHELL")
+         (setenv "BBSERVER")
+         (bitbake-remove-path (concat poky-directory
+                                      bitbake-script-directory))
+         (bitbake-remove-path (concat poky-directory
+                                      bitbake-bin-directory)))))
 
 (defun bitbake-shell-command (command)
   "Run shell COMMAND in bitbake buffer.
@@ -275,7 +306,7 @@ binary and BUILD-DIRECTORY as the build directory."
                          bitbake-build-directory))))
 
   ;; stop server if running
-  (when (getenv "BBSERVER")
+  (when bitbake-current-poky-directory
     (message "Stopping other instance of bitbake server")
     (bitbake-stop-server))
 
@@ -286,28 +317,36 @@ binary and BUILD-DIRECTORY as the build directory."
         bitbake-layers-cache '())
 
   ;; prepare environment
-  (setq bitbake-current-server-host (or bitbake-server-host "localhost")
-        bitbake-current-server-port (or bitbake-server-port (+ 1024 (random (- 65535 1024))))
-        bitbake-current-poky-directory (file-name-as-directory poky-directory)
-        bitbake-current-build-directory (file-name-as-directory build-directory))
-  (bitbake-setup-environment  bitbake-current-poky-directory bitbake-current-build-directory)
+  (setq bitbake-current-poky-directory (file-name-as-directory poky-directory)
+        bitbake-current-build-directory (file-name-as-directory build-directory)
+        bitbake-current-server-host (or bitbake-server-host "localhost")
+        bitbake-current-server-port (or bitbake-server-port (+ 1024 (random (- 65535 1024)))))
+  (bitbake-setup-environment bitbake-current-poky-directory
+                             bitbake-current-build-directory
+                             (format "%s:%s" bitbake-current-server-host bitbake-current-server-port))
 
   ;; start the server
-  (shell-command (format "cd /tmp && bitbake -B %s:%s --server-only"
-                         bitbake-current-server-host bitbake-current-server-port))
-
-  (setenv "BBSERVER" (format "%s:%s" bitbake-current-server-host bitbake-current-server-port)))
+  (bitbake-s-command (format "BBSERVER='' bitbake -B %s:%s --server-only 2>&1"
+                             bitbake-current-server-host
+                             bitbake-current-server-port)
+                     "Unable to start server")
+  (message "Bitbake: server running at %s:%s"
+           (or (file-remote-p poky-directory)
+               bitbake-current-server-host)
+           bitbake-current-server-port))
 
 (defun bitbake-stop-server ()
   "Stop the bitbake server instance."
   (interactive)
-  (unless (getenv "BBSERVER")
+  (unless bitbake-current-poky-directory
     (user-error "No bitbake server running"))
   (message "Bitbake: stopping server")
-  (call-process-shell-command (format "bitbake --kill-server --remote-server=%s" (getenv "BBSERVER")))
+  (let ((default-directory bitbake-current-poky-directory))
+    (process-file-shell-command (format "bitbake --kill-server --remote-server=%s:%d"
+                                        bitbake-current-server-host
+                                        bitbake-current-server-port)))
   (bitbake-cleanup-environment bitbake-current-poky-directory)
   (message "Bitbake: server is down, cleaning up")
-  (setenv "BBSERVER")
   (setq bitbake-recipes-cache nil
         bitbake-recipe-variables-cache nil
         bitbake-recipe-tasks-cache nil
@@ -340,14 +379,17 @@ If COMMAND fails, raise `user-error' with MESSAGE."
     (goto-char (point-max))
     (let* ((p (point))
            (default-directory bitbake-current-build-directory)
-           (rc (call-process-shell-command
+           (command (string-join (append bitbake-current-remote-environment
+                                         (list command))
+                                 " "))
+           (rc (process-file-shell-command
                 command
                 nil
-                (list (current-buffer) t))))
+                (list (bitbake-capture-buffer) t))))
       (if (not (equal 0 rc))
           (error "%s: %s"
                  message
-                 (if (getenv "BBSERVER")
+                 (if bitbake-current-poky-directory
                      (format "see %s for details" (buffer-name))
                    "server is not started"))
         ;; Mark the output region for the parser function like
