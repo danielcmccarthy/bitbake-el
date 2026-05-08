@@ -363,6 +363,14 @@ binary and BUILD-DIRECTORY as the build directory."
     (when process (kill-process process))
     (when buffer (kill-buffer buffer))))
 
+(defun bitbake-find-file (path)
+  "Open PATH with `find-file'.
+
+If `bitbake-poky-directory' is remote, look for PATH there."
+  (let* ((prefix (file-remote-p bitbake-current-poky-directory))
+         (remote-path (concat prefix path)))
+    (find-file remote-path)))
+
 (defun bitbake-parse-recipes (buffer)
   "Parse recipes in BUFFER."
   (with-current-buffer buffer
@@ -557,7 +565,7 @@ If FETCH is non-nil, invalidate cache and fetch the variables again."
         (message "Bitbake: error - %s" (match-string 1))
         (let ((log-file (match-string 3)))
           (if log-file
-              (find-file log-file)))))
+              (bitbake-find-file log-file)))))
     (setq bitbake-current-command nil))
   (message "Bitbake: scheduling queue")
   (with-current-buffer (bitbake-buffer)
@@ -693,17 +701,17 @@ If FORCE is non-nil, force rebuild of image,"
 (defun bitbake-workdir (recipe)
   "Open RECIPE workdir."
   (interactive (list (bitbake-read-recipe)))
-  (find-file (bitbake-recipe-variable "WORKDIR" recipe)))
+  (bitbake-find-file (bitbake-recipe-variable "WORKDIR" recipe)))
 
 (defun bitbake-file (recipe)
   "Open RECIPE bitbake file."
   (interactive (list (bitbake-read-recipe)))
-  (find-file (bitbake-recipe-variable "FILE" recipe)))
+  (bitbake-find-file (bitbake-recipe-variable "FILE" recipe)))
 
 (defun bitbake-rootfs (image)
   "Open IMAGE root fs."
   (interactive (list (bitbake-read-image)))
-  (find-file (bitbake-recipe-variable "IMAGE_ROOTFS" image)))
+  (bitbake-find-file (bitbake-recipe-variable "IMAGE_ROOTFS" image)))
 
 (defun wic-read-definition-file ()
   "Read path to a wic wks definition file."
