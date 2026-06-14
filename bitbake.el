@@ -339,6 +339,7 @@ If COMMAND fails, raise `user-error' with MESSAGE."
   (with-current-buffer (bitbake-capture-buffer)
     (goto-char (point-max))
     (let* ((p (point))
+           (default-directory bitbake-current-build-directory)
            (rc (call-process-shell-command
                 command
                 nil
