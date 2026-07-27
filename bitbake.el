@@ -341,10 +341,11 @@ binary and BUILD-DIRECTORY as the build directory."
   (unless bitbake-current-poky-directory
     (user-error "No bitbake server running"))
   (message "Bitbake: stopping server")
-  (let ((default-directory bitbake-current-poky-directory))
-    (process-file-shell-command (format "bitbake --kill-server --remote-server=%s:%d"
-                                        bitbake-current-server-host
-                                        bitbake-current-server-port)))
+  (with-demoted-errors
+      (bitbake-s-command (format "bitbake --kill-server --remote-server=%s:%d"
+                                 bitbake-current-server-host
+                                 bitbake-current-server-port)
+                         "Unable to stop server"))
   (bitbake-cleanup-environment bitbake-current-poky-directory)
   (message "Bitbake: server is down, cleaning up")
   (setq bitbake-recipes-cache nil
