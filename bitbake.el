@@ -357,8 +357,8 @@ binary and BUILD-DIRECTORY as the build directory."
         bitbake-current-build-directory nil
         bitbake-current-task nil
         bitbake-task-queue nil)
-  (setq-local kill-buffer-query-functions '())
   (let* ((buffer (get-buffer "*bitbake*"))
+         (kill-buffer-query-functions '())
          (process (get-buffer-process buffer)))
     (when process (kill-process process))
     (when buffer (kill-buffer buffer))))
