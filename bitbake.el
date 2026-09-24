@@ -1004,14 +1004,17 @@ customize `bitbake-devshell-function'."
              (cons "Bitbake: error setting up devshell" (cdr err))))))
 
 (defun bitbake-devshell-finish ()
-  (when bitbake-devshell-flag-file
+  (when (and bitbake-open-devshell-in-emacs
+             (not (file-remote-p bitbake-current-poky-directory)))
     (message "Bitbake: cleaning up devshell buffer '%s'" (buffer-name))
     (delete-file bitbake-devshell-flag-file)))
 
 (defun bitbake--devshell-argument ()
-  (when bitbake-open-devshell-in-emacs
-    (format "-R %s" (expand-file-name bitbake-devshell-fragment
-                                      bitbake-load-base))))
+  (if (and bitbake-open-devshell-in-emacs
+           (not (file-remote-p bitbake-current-poky-directory)))
+      (format "-R %s" (expand-file-name bitbake-devshell-fragment
+                                        bitbake-load-base))
+    ""))
 
 (defun bitbake-devshell-shell (title command)
   "Open a `shell-mode' buffer for the devshell task."
