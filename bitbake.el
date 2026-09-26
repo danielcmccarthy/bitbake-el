@@ -197,7 +197,9 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defun bitbake-buffer ()
   "Fetch or create the bitbake buffer."
   (let ((buffer-name "*bitbake*"))
-    (or (get-buffer buffer-name)
+    (or (let ((b (get-buffer buffer-name)))
+          (and (get-buffer-process b)
+               b))
         (let* ((remote-path (or (-find (lambda (v) (string-prefix-p "PATH=" v))
                                        bitbake-current-remote-environment)
                                 ""))
