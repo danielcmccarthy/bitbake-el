@@ -167,6 +167,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defvar bitbake-buffer-prompt "/////---bitbake$ " "The prompt used in the bitbake buffer.")
 (defvar bitbake-buffer-prompt-regexp (concat "^" (regexp-quote bitbake-buffer-prompt)) "A regexp matching the prompt.")
 (defvar bitbake-layers-cache nil "Cache of bitbake layers.")
+(defvar bitbake--current-devshell-listener nil)
 (defconst bitbake-load-base (file-name-directory load-file-name))
 (defconst bitbake-devshell-fragment "bitbake-el-devshell.conf"
   "Config fragment to use emacsclient in devshell command.")
@@ -356,6 +357,8 @@ binary and BUILD-DIRECTORY as the build directory."
                          "Unable to stop server"))
   (bitbake-cleanup-environment bitbake-current-poky-directory)
   (message "Bitbake: server is down, cleaning up")
+  (when (process-live-p bitbake--current-devshell-listener)
+    (kill-process bitbake--current-devshell-listener))
   (setq bitbake-recipes-cache nil
         bitbake-recipe-variables-cache nil
         bitbake-recipe-tasks-cache nil
@@ -365,7 +368,8 @@ binary and BUILD-DIRECTORY as the build directory."
         bitbake-current-poky-directory nil
         bitbake-current-build-directory nil
         bitbake-current-task nil
-        bitbake-task-queue nil)
+        bitbake-task-queue nil
+        bitbake--current-devshell-listener nil)
   (let* ((buffer (get-buffer "*bitbake*"))
          (kill-buffer-query-functions '())
          (process (get-buffer-process buffer)))
@@ -1025,25 +1029,24 @@ customize `bitbake-devshell-function'."
           (message "Bitbake: error creating task fifo")))))
 
 (defun bitbake-devshell-listen ()
-  (let ((default-directory bitbake-current-build-directory))
-    (defvar bitbake-remote-terminal-process nil)
-    (when (process-live-p bitbake-remote-terminal-process)
-      (kill-process bitbake-remote-terminal-process))
-    (let ((p (start-file-process "bitbake-remote-shell"
-                                 nil
-                                 "cat"
-                                 (let ((fifo (file-name-concat bitbake-current-build-directory
-                                                               "emacs-bitbake-fifo"))
-                                       (remote (file-remote-p bitbake-current-build-directory)))
-                                   (if remote
-                                       (string-remove-prefix remote fifo)
-                                     fifo)))))
-      (set-process-filter p
-                          #'(lambda (process s)
-                              (let ((args (string-split (string-trim s) "\n")))
-                                (message "Bitbake: from fifo: %S" args)
-                                (apply 'bitbake-devshell args))))
-      (setq-local bitbake-remote-terminal-process p))))
+  (when (process-live-p bitbake--current-devshell-listener)
+    (kill-process bitbake--current-devshell-listener))
+  (let ((default-directory bitbake-current-build-directory)
+        (p (start-file-process "bitbake-devshell-listen"
+                               nil
+                               "cat"
+                               (let ((fifo (file-name-concat bitbake-current-build-directory
+                                                             "emacs-bitbake-fifo"))
+                                     (remote (file-remote-p bitbake-current-build-directory)))
+                                 (if remote
+                                     (string-remove-prefix remote fifo)
+                                   fifo)))))
+    (set-process-filter p
+                        #'(lambda (process s)
+                            (let ((args (string-split (string-trim s) "\n")))
+                              (message "Bitbake: from fifo: %S" args)
+                              (apply 'bitbake-devshell args))))
+    (setq bitbake--current-devshell-listener p)))
 
 (defun bitbake-devshell-finish ()
   ;; FIXME: how does this happen in the comint-indirect buffer? Maybe
