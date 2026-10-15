@@ -249,7 +249,10 @@ Should be a format string with one '\\=%s' directive for a variable name."
                                         bitbake-bin-directory)))
                 (remote-env `(,(format "BBPATH=%s" remote-build)
                               ,(format "BUILDDIR=%s" remote-build)
-                              ,(format "BBSERVER=%s" server-address))))
+                              ,(format "BBSERVER=%s" server-address)
+                              ,(format "EMACS_BITBAKE_DEVSHELL=%s"
+                                       (expand-file-name bitbake-devshell-launcher
+                                                         remote-build)))))
            (setq bitbake-current-remote-environment
                  (cons (format "PATH=%s:$PATH"
                                (string-join remote-path ":"))
@@ -260,7 +263,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
          (setenv "BUILDDIR" build-directory)
          (setenv "BBSERVER" server-address)
          (setenv "EMACS_BITBAKE_DEVSHELL" (expand-file-name bitbake-devshell-launcher
-                                                            bitbake-load-base))
+                                                            build-directory))
          (bitbake-add-path (concat poky-directory
                                    bitbake-script-directory))
          (bitbake-add-path (concat poky-directory
@@ -326,6 +329,9 @@ binary and BUILD-DIRECTORY as the build directory."
   (bitbake-setup-environment bitbake-current-poky-directory
                              bitbake-current-build-directory
                              (format "%s:%s" bitbake-current-server-host bitbake-current-server-port))
+
+  (when bitbake-open-devshell-in-emacs
+    (bitbake-devshell-setup build-directory))
 
   ;; start the server
   (bitbake-s-command (format "BBSERVER='' bitbake -B %s:%s --server-only 2>&1"
@@ -629,6 +635,7 @@ If FORCE is non-nil, force running the task."
   (bitbake-command
     (when force
       (bitbake-recipe-taint-task recipe task))
+    (bitbake-devshell-listen)
     (bitbake-shell-command (format "bitbake %s %s %s -c %s"
                                    recipe
                                    (if force "-f" "")
@@ -979,25 +986,22 @@ With a prefix arg, prompt for the layer name, defaulting to basename of PATH."
 (defvar-local bitbake-devshell-flag-file nil
   "The name of a file to delete when the current buffer is killed.")
 
-(defun bitbake-devshell (flag-file)
+(defun bitbake-devshell (flag-file title command cwd)
   "Open a terminal buffer for the do_devshell task.
-
-Expects three arguments in `server-eval-args-left': the buffer name; an
-initial command to run; and a working directory. FLAG-FILE is a temp
-file to delete, which signals bitbake that the shell is finished.
 
 To specify which terminal mode to use (`shell-mode', `term-mode', etc.),
 customize `bitbake-devshell-function'."
   (condition-case err
-      (let* ((title (pop server-eval-args-left))
-             (command (pop server-eval-args-left))
-             (cwd (pop server-eval-args-left)))
+      (let* ()
         (unless (and title command cwd)
           (error "missing arguments"))
         (message "Bitbake: devshell '%s' in '%s'" title cwd)
-        (let ((default-directory cwd))
+        (let ((default-directory (file-name-concat (file-remote-p bitbake-current-build-directory)
+                                                   cwd)))
           (funcall bitbake-devshell-function (format "*%s*" title) command)
-          (setq-local bitbake-devshell-flag-file flag-file))
+          (setq-local bitbake-devshell-flag-file
+                      (file-name-concat (file-remote-p bitbake-current-build-directory)
+                                        flag-file)))
         (add-hook 'kill-buffer-hook 'bitbake-devshell-finish)
         (message "Bitbake: When finished, kill this buffer to complete the devshell task."))
     (error
@@ -1005,17 +1009,58 @@ customize `bitbake-devshell-function'."
      (signal (car err)
              (cons "Bitbake: error setting up devshell" (cdr err))))))
 
+(defun bitbake-devshell-setup (build-directory)
+  "Install devshell support files in BUILD-DIRECTORY."
+  (message "Bitbake: installing devshell support in %s" build-directory)
+  (dolist (f (list bitbake-devshell-fragment bitbake-devshell-launcher))
+    (copy-file (expand-file-name f bitbake-load-base)
+               (file-name-concat build-directory
+                                 f)
+               t))
+  (let ((default-directory build-directory)
+        (fifo (file-name-concat build-directory
+                                "emacs-bitbake-fifo")))
+    (unless (file-exists-p fifo)
+      (or (= 0 (process-file-shell-command (format "mkfifo %s" fifo)))
+          (message "Bitbake: error creating task fifo")))))
+
+(defun bitbake-devshell-listen ()
+  (let ((default-directory bitbake-current-build-directory))
+    (defvar bitbake-remote-terminal-process nil)
+    (when (process-live-p bitbake-remote-terminal-process)
+      (kill-process bitbake-remote-terminal-process))
+    (let ((p (start-file-process "bitbake-remote-shell"
+                                 nil
+                                 "cat"
+                                 (let ((fifo (file-name-concat bitbake-current-build-directory
+                                                               "emacs-bitbake-fifo"))
+                                       (remote (file-remote-p bitbake-current-build-directory)))
+                                   (if remote
+                                       (string-remove-prefix remote fifo)
+                                     fifo)))))
+      (set-process-filter p
+                          #'(lambda (process s)
+                              (let ((args (string-split (string-trim s) "\n")))
+                                (message "Bitbake: from fifo: %S" args)
+                                (apply 'bitbake-devshell args))))
+      (setq-local bitbake-remote-terminal-process p))))
+
 (defun bitbake-devshell-finish ()
+  ;; FIXME: how does this happen in the comint-indirect buffer? Maybe
+  ;; this is Emacs 31?
   (when (and bitbake-open-devshell-in-emacs
-             (not (file-remote-p bitbake-current-poky-directory)))
+             bitbake-devshell-flag-file)
     (message "Bitbake: cleaning up devshell buffer '%s'" (buffer-name))
     (delete-file bitbake-devshell-flag-file)))
 
 (defun bitbake--devshell-argument ()
-  (if (and bitbake-open-devshell-in-emacs
-           (not (file-remote-p bitbake-current-poky-directory)))
-      (format "-R %s" (expand-file-name bitbake-devshell-fragment
-                                        bitbake-load-base))
+  (if bitbake-open-devshell-in-emacs
+      (let ((build-dir (if (file-remote-p bitbake-current-build-directory)
+                           (string-remove-prefix (file-remote-p bitbake-current-build-directory)
+                                                 bitbake-current-build-directory)
+                         bitbake-current-build-directory)))
+        (format "-R %s" (expand-file-name bitbake-devshell-fragment
+                                          build-dir)))
     ""))
 
 (defun bitbake-devshell-shell (title command)
