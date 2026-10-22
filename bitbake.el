@@ -122,9 +122,10 @@ here.  Calling bitbake-flash will copy the hdd image on the usb disk if present.
   :version "24.1")
 
 (defcustom bitbake-open-devshell-in-emacs t
-  "If true, arrange for devshell to open an Emacs shell buffer.
+  "If true, arrange for devshell/terminal tasks to open an Emacs shell buffer.
 
-Otherwise, devshell will launch an external terminal app."
+Otherwise, these tasks will launch an external terminal app. For a
+list of tasks that this applies to, see `bitbake-devshell-tasks'."
   :type '(boolean)
   :group 'bitbake)
 
@@ -173,6 +174,8 @@ Should be a format string with one '\\=%s' directive for a variable name."
   "Config fragment to use emacsclient in devshell command.")
 (defconst bitbake-devshell-launcher "devshell-launcher.sh"
   "Launcher script to run emacsclient in OE_TERMINAL_CUSTOMCMD.")
+(defconst bitbake-devshell-tasks '("devshell" "pydevshell" "menuconfig")
+  "List of bitbake tasks which start a terminal.")
 (make-variable-buffer-local 'bitbake-last-disk-image)
 
 ;;; Minor mode functions
@@ -639,7 +642,8 @@ If FORCE is non-nil, force running the task."
   (bitbake-command
     (when force
       (bitbake-recipe-taint-task recipe task))
-    (bitbake-devshell-listen)
+    (when (member task bitbake-devshell-tasks)
+      (bitbake-devshell-listen))
     (bitbake-shell-command (format "bitbake %s %s %s -c %s"
                                    recipe
                                    (if force "-f" "")
@@ -805,7 +809,7 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
     (make-directory bbappend-path t)
     (find-file (file-name-concat bbappend-path
                                  (format "%s_%%.bbappend"
-                                        recipe)))))
+                                         recipe)))))
 
 ;;; bitbake-layers
 
