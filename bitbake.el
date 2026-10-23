@@ -240,6 +240,16 @@ Should be a format string with one '\\=%s' directive for a variable name."
     (when (member path components)
       (setenv "PATH" (s-join ":" (delete path components))))))
 
+(defun bitbake--remote-path (&rest parts)
+  "Concatenate PARTS, adding a remote prefix if necessary."
+  (apply #'concat (file-remote-p bitbake-current-poky-directory) parts))
+
+(defun bitbake--local-path (path)
+  "Remove any remote prefix from PATH."
+  (string-remove-prefix (or (file-remote-p bitbake-current-poky-directory)
+                            "")
+                        path))
+
 (defun bitbake-setup-environment (poky-directory build-directory server-address)
   "Add POKY-DIRECTORY to PATH environment variable and set BBPATH to BUILD-DIRECTORY."
   (cond ((file-remote-p poky-directory)
@@ -383,9 +393,7 @@ binary and BUILD-DIRECTORY as the build directory."
   "Open PATH with `find-file'.
 
 If `bitbake-poky-directory' is remote, look for PATH there."
-  (let* ((prefix (file-remote-p bitbake-current-poky-directory))
-         (remote-path (concat prefix path)))
-    (find-file remote-path)))
+  (find-file (bitbake--remote-path path)))
 
 (defun bitbake-parse-recipes (buffer)
   "Parse recipes in BUFFER."
@@ -801,11 +809,11 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
                                 (string-prefix-p local-path
                                                  recipe-path)))
                             (bitbake-layer-names)))
-         (bbappend-path (concat (file-remote-p bitbake-current-poky-directory)
-                                (cadr (assoc layer (bitbake-layer-names)))
-                                (file-name-directory
-                                 (string-remove-prefix (cadr orig-layer)
-                                                       recipe-path)))))
+         (bbappend-path (bitbake--remote-path
+                         (cadr (assoc layer (bitbake-layer-names)))
+                         (file-name-directory
+                          (string-remove-prefix (cadr orig-layer)
+                                                recipe-path)))))
     (make-directory bbappend-path t)
     (find-file (file-name-concat bbappend-path
                                  (format "%s_%%.bbappend"
@@ -873,9 +881,7 @@ Defaults to the current buffer."
               (layer (-find (lambda (l)
                               (let ((local-path (cadr l)))
                                 (string-prefix-p local-path
-                                                 (string-remove-prefix
-                                                  (file-remote-p file)
-                                                  file))))
+                                                 (bitbake--local-path file))))
                             (bitbake-layer-names))))
     (car layer)))
 
@@ -893,11 +899,7 @@ With a prefix arg, prompt for the layer name, defaulting to basename of PATH."
               (read-string "Layer name: ")
             (file-name-base path))))
   (let* ((full-path (expand-file-name path))
-         (local-path (if (file-remote-p bitbake-current-poky-directory)
-                         (string-remove-prefix
-                          (file-remote-p bitbake-current-poky-directory)
-                          full-path)
-                       full-path)))
+         (local-path (bitbake--local-path full-path)))
     (unless (file-exists-p full-path)
       (message "bitbake-add-layer: Layer directory %s does not exist; creating it"
                full-path)
@@ -926,8 +928,7 @@ With a prefix arg, prompt for the layer name, defaulting to basename of PATH."
      (bitbake-s-command (format "bitbake-layers remove-layer %s 2>&1"
                                 (shell-quote-argument path))
                         "Unable to remove layer")
-     (let ((remote-path (concat (file-remote-p bitbake-current-poky-directory)
-                                path)))
+     (let ((remote-path (bitbake--remote-path path)))
        (when (yes-or-no-p (format "Delete %s?" remote-path))
          (delete-directory remote-path t)))
      (with-current-buffer "*bitbake-layers*"
@@ -937,8 +938,7 @@ With a prefix arg, prompt for the layer name, defaulting to basename of PATH."
   (pcase-let ((`(,name ,path ,priority) l))
     (vector name
             (list path
-                  'bitbake-layer-path (concat (file-remote-p bitbake-current-poky-directory)
-                                              path)
+                  'bitbake-layer-path (bitbake--remote-path path)
                   'action 'bitbake--find-layer
                   'help-echo (format "Open %s" path))
             priority)))
@@ -1004,12 +1004,10 @@ customize `bitbake-devshell-function'."
         (unless (and title command cwd)
           (error "missing arguments"))
         (message "Bitbake: devshell '%s' in '%s'" title cwd)
-        (let ((default-directory (file-name-concat (file-remote-p bitbake-current-build-directory)
-                                                   cwd)))
+        (let ((default-directory (bitbake--remote-path cwd)))
           (funcall bitbake-devshell-function (format "*%s*" title) command)
           (setq-local bitbake-devshell-flag-file
-                      (file-name-concat (file-remote-p bitbake-current-build-directory)
-                                        flag-file)))
+                      (bitbake--remote-path flag-file)))
         (add-hook 'kill-buffer-hook 'bitbake-devshell-finish)
         (message "Bitbake: When finished, kill this buffer to complete the devshell task."))
     (error
@@ -1040,11 +1038,8 @@ customize `bitbake-devshell-function'."
                                nil
                                "cat"
                                (let ((fifo (file-name-concat bitbake-current-build-directory
-                                                             "emacs-bitbake-fifo"))
-                                     (remote (file-remote-p bitbake-current-build-directory)))
-                                 (if remote
-                                     (string-remove-prefix remote fifo)
-                                   fifo)))))
+                                                             "emacs-bitbake-fifo")))
+                                 (bitbake--local-path fifo)))))
     (set-process-filter p
                         #'(lambda (process s)
                             (let ((args (string-split (string-trim s) "\n")))
@@ -1062,10 +1057,7 @@ customize `bitbake-devshell-function'."
 
 (defun bitbake--devshell-argument ()
   (if bitbake-open-devshell-in-emacs
-      (let ((build-dir (if (file-remote-p bitbake-current-build-directory)
-                           (string-remove-prefix (file-remote-p bitbake-current-build-directory)
-                                                 bitbake-current-build-directory)
-                         bitbake-current-build-directory)))
+      (let ((build-dir (bitbake--local-path bitbake-current-build-directory)))
         (format "-R %s" (expand-file-name bitbake-devshell-fragment
                                           build-dir)))
     ""))
