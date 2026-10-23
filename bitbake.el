@@ -154,6 +154,9 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defvar bitbake-current-server-port nil "The actual port of the bitbake server instance.")
 (defvar bitbake-current-poky-directory nil "The actual directory holding bitbake binaries.")
 (defvar bitbake-current-build-directory nil "The actual build directory.")
+(defvar bitbake-current-support-directory nil "A directory storing helper files.
+
+ It belongs in `bitbake-current-build-directory'.")
 (defvar bitbake-current-remote-environment nil "List of environment variables used in remote bitbake commands.")
 (defvar bitbake-recipes-cache '() "Cache of bitbake recipes.")
 (defvar bitbake-recipe-variables-cache '() "Cache of bitbake recipe variables.")
@@ -250,13 +253,15 @@ Should be a format string with one '\\=%s' directive for a variable name."
                             "")
                         path))
 
-(defun bitbake-setup-environment (poky-directory build-directory server-address)
+(defun bitbake-setup-environment (poky-directory build-directory support-directory server-address)
   "Add POKY-DIRECTORY to PATH environment variable and set BBPATH to BUILD-DIRECTORY."
   (cond ((file-remote-p poky-directory)
          (let* ((remote-base (tramp-file-name-localname
                               (tramp-dissect-file-name poky-directory)))
                 (remote-build (tramp-file-name-localname
                                (tramp-dissect-file-name build-directory)))
+                (remote-support (bitbake--local-path
+                                 support-directory))
                 (remote-path `(,(concat remote-base
                                         bitbake-script-directory)
                                ,(concat remote-base
@@ -266,7 +271,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
                               ,(format "BBSERVER=%s" server-address)
                               ,(format "EMACS_BITBAKE_DEVSHELL=%s"
                                        (expand-file-name bitbake-devshell-launcher
-                                                         remote-build)))))
+                                                         remote-support)))))
            (setq bitbake-current-remote-environment
                  (cons (format "PATH=%s:$PATH"
                                (string-join remote-path ":"))
@@ -277,7 +282,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
          (setenv "BUILDDIR" build-directory)
          (setenv "BBSERVER" server-address)
          (setenv "EMACS_BITBAKE_DEVSHELL" (expand-file-name bitbake-devshell-launcher
-                                                            build-directory))
+                                                            support-directory))
          (bitbake-add-path (concat poky-directory
                                    bitbake-script-directory))
          (bitbake-add-path (concat poky-directory
@@ -338,14 +343,17 @@ binary and BUILD-DIRECTORY as the build directory."
   ;; prepare environment
   (setq bitbake-current-poky-directory (file-name-as-directory poky-directory)
         bitbake-current-build-directory (file-name-as-directory build-directory)
+        bitbake-current-support-directory (file-name-concat build-directory
+                                                            "emacs")
         bitbake-current-server-host (or bitbake-server-host "localhost")
         bitbake-current-server-port (or bitbake-server-port (+ 1024 (random (- 65535 1024)))))
   (bitbake-setup-environment bitbake-current-poky-directory
                              bitbake-current-build-directory
+                             bitbake-current-support-directory
                              (format "%s:%s" bitbake-current-server-host bitbake-current-server-port))
 
   (when bitbake-open-devshell-in-emacs
-    (bitbake-devshell-setup build-directory))
+    (bitbake-devshell-setup bitbake-current-support-directory))
 
   ;; start the server
   (bitbake-s-command (format "BBSERVER='' bitbake -B %s:%s --server-only 2>&1"
@@ -380,6 +388,7 @@ binary and BUILD-DIRECTORY as the build directory."
         bitbake-current-server-port nil
         bitbake-current-poky-directory nil
         bitbake-current-build-directory nil
+        bitbake-current-support-directory nil
         bitbake-current-task nil
         bitbake-task-queue nil
         bitbake--current-devshell-listener nil)
@@ -1015,31 +1024,33 @@ customize `bitbake-devshell-function'."
      (signal (car err)
              (cons "Bitbake: error setting up devshell" (cdr err))))))
 
-(defun bitbake-devshell-setup (build-directory)
-  "Install devshell support files in BUILD-DIRECTORY."
-  (message "Bitbake: installing devshell support in %s" build-directory)
+(defun bitbake-devshell-setup (dir)
+  "Install devshell support files in DIR."
+  (message "Bitbake: installing devshell support in %s" dir)
+  (condition-case _
+      (make-directory dir)
+    (file-already-exists nil))
   (dolist (f (list bitbake-devshell-fragment bitbake-devshell-launcher))
     (copy-file (expand-file-name f bitbake-load-base)
-               (file-name-concat build-directory
+               (file-name-concat dir
                                  f)
                t))
-  (let ((default-directory build-directory)
-        (fifo (file-name-concat build-directory
+  (let ((default-directory dir)
+        (fifo (file-name-concat dir
                                 "emacs-bitbake-fifo")))
     (unless (file-exists-p fifo)
-      (or (= 0 (process-file-shell-command (format "mkfifo %s" fifo)))
+      (or (= 0 (process-file-shell-command (format "mkfifo %s"
+                                                   (bitbake--local-path fifo))))
           (message "Bitbake: error creating task fifo")))))
 
 (defun bitbake-devshell-listen ()
   (when (process-live-p bitbake--current-devshell-listener)
     (kill-process bitbake--current-devshell-listener))
-  (let ((default-directory bitbake-current-build-directory)
-        (p (start-file-process "bitbake-devshell-listen"
-                               nil
-                               "cat"
-                               (let ((fifo (file-name-concat bitbake-current-build-directory
-                                                             "emacs-bitbake-fifo")))
-                                 (bitbake--local-path fifo)))))
+  (let* ((default-directory bitbake-current-support-directory)
+         (p (start-file-process "bitbake-devshell-listen"
+                                nil
+                                "cat"
+                                "emacs-bitbake-fifo")))
     (set-process-filter p
                         #'(lambda (process s)
                             (let ((args (string-split (string-trim s) "\n")))
@@ -1057,9 +1068,9 @@ customize `bitbake-devshell-function'."
 
 (defun bitbake--devshell-argument ()
   (if bitbake-open-devshell-in-emacs
-      (let ((build-dir (bitbake--local-path bitbake-current-build-directory)))
-        (format "-R %s" (expand-file-name bitbake-devshell-fragment
-                                          build-dir)))
+      (format "-R %s"
+              (expand-file-name bitbake-devshell-fragment
+                                (bitbake--local-path bitbake-current-support-directory)))
     ""))
 
 (defun bitbake-devshell-shell (title command)

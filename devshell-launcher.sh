@@ -6,11 +6,18 @@ then
     exit 1
 fi
 
+fifo="$(dirname "$0")/emacs-bitbake-fifo"
+if ! [ -p "$fifo" ]
+then
+    echo "$fifo not found" > /dev/stderr
+    exit 1
+fi
+
 # bitbake expects this process to run until the user closes the
 # terminal. So we use a temp file as a flag for Emacs to signal when
 # the terminal buffer has been killed.
 flag=$(mktemp)
-if cat > "$BUILDDIR/emacs-bitbake-fifo" <<EOF
+if cat > "$fifo" <<EOF
 $flag
 $1
 $2
