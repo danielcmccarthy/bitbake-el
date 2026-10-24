@@ -1081,10 +1081,45 @@ customize `bitbake-devshell-function'."
 
 (defun bitbake-devshell-term (title command)
   "Open a `term-mode' buffer for the devshell task."
-  (term "bash")
+  (if (file-remote-p default-directory)
+      ;; `term' ignores `default-directory', so if we want to open
+      ;; buffers on remote hosts we need to do it ourselves. The
+      ;; following is copied from `term-exec' and especially
+      ;; `term-exec-1'.
+      (let ((buffer (get-buffer-create title)))
+        ;; do this first so `term-mode' gets its window size from the
+        ;; window we're going to use.
+        (pop-to-buffer buffer)
+        (with-current-buffer buffer
+          (let ((proc (get-buffer-process buffer))) ; Blast any old process.
+            (when proc (delete-process proc)))
+          (term-mode)
+          (let* ((process-connection-type t)
+                 ;; `term-exec-1' binds this; do we need to?
+                 ;; (inhibit-eol-conversion t)
+                 (coding-system-for-read 'binary)
+                 (process-environment `(,(format "TERM=%s" term-term-name)
+                                        ,(format "LINES=%d" term-height)
+                                        ,(format "COLUMNS=%d" term-width)
+                                        ,@process-environment))
+                 (p (start-file-process
+                     (buffer-name buffer)
+                     buffer
+                     "/bin/sh"
+                     "-c"
+                     (format "stty -nl echo rows %d columns %d sane 2>%s;\
+if [ $1 = .. ]; then shift; fi; exec \"$@\""
+		             term-height term-width null-device)
+                     ".."
+                     "bash")))
+            (set-process-filter p #'term-emulate-terminal)
+            (set-process-sentinel p #'term-sentinel)
+            (term-char-mode))))
+    ;; running locally. So much simpler!
+    (term "bash")
+    (rename-buffer title))
   (term-send-string (get-buffer-process (current-buffer))
-                    (concat command "\n"))
-  (rename-buffer title))
+                    (concat command "\n")))
 
 ;;; Mode definition
 
