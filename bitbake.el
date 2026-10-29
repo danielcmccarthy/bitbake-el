@@ -1002,6 +1002,10 @@ With a prefix arg, prompt for the layer name, defaulting to basename of PATH."
 
 (defvar-local bitbake-devshell-flag-file nil
   "The name of a file to delete when the current buffer is killed.")
+(defvar-local bitbake-devshell-pid nil
+  "The PID of the current task.
+
+Used to clean up children when running in Docker.")
 
 (defun bitbake-devshell (flag-file title command cwd)
   "Open a terminal buffer for the do_devshell task.
@@ -1016,13 +1020,31 @@ customize `bitbake-devshell-function'."
         (let ((default-directory (bitbake--remote-path cwd)))
           (funcall bitbake-devshell-function (format "*%s*" title) command)
           (setq-local bitbake-devshell-flag-file
-                      (bitbake--remote-path flag-file)))
+                      (bitbake--remote-path flag-file)
+                      bitbake-devshell-pid
+                      (bitbake--devshell-read-pidfile command)))
         (add-hook 'kill-buffer-hook 'bitbake-devshell-finish)
         (message "Bitbake: When finished, kill this buffer to complete the devshell task."))
     (error
      (delete-file flag-file)
      (signal (car err)
              (cons "Bitbake: error setting up devshell" (cdr err))))))
+
+(defun bitbake--devshell-read-pidfile (command)
+  (pcase (string-split command)
+    (`(,(pred (string-suffix-p "oe-gnome-terminal-phonehome"))
+       ,pidfile
+       ,task-command)
+     (with-temp-buffer
+       (process-file-shell-command (format "while ! [ -s %s ]; do sleep 1; done; cat %s"
+                                           pidfile
+                                           pidfile)
+                                   nil
+                                   (current-buffer))
+       (string-to-number (buffer-string))))
+    (_
+     (warn "Bitbake: unrecognized devshell command '%s'" command)
+     nil)))
 
 (defun bitbake-devshell-setup (dir)
   "Install devshell support files in DIR."
@@ -1058,12 +1080,30 @@ customize `bitbake-devshell-function'."
                               (apply 'bitbake-devshell args))))
     (setq bitbake--current-devshell-listener p)))
 
+
+(defconst bitbake-devshell-docker-kill-command
+  "ppid=`grep PPid /proc/%s/status | cut -d ':' -f 2 | tr -d ' \\t'`
+ kill -9 -$ppid"
+  "Shell command to kill the process group of a devshell command inside a Docker container.
+
+Expects one format argument: the PID of the Bitbake devshell process.")
+
 (defun bitbake-devshell-finish ()
-  ;; FIXME: how does this happen in the comint-indirect buffer? Maybe
-  ;; this is Emacs 31?
   (when (and bitbake-open-devshell-in-emacs
              bitbake-devshell-flag-file)
     (message "Bitbake: cleaning up devshell buffer '%s'" (buffer-name))
+    ;; If bitbake is running inside a container, the devshell buffer's
+    ;; process will just be the "docker exec" command on the host.
+    ;; Killing that command won't kill anything in the container, so
+    ;; we have to do it.
+    (when (and (file-remote-p default-directory)
+               (string= "docker"
+                        (tramp-file-name-method
+                         (tramp-dissect-file-name default-directory))))
+      (unless (equal 0 (process-file-shell-command
+                        (format bitbake-devshell-docker-kill-command
+                                bitbake-devshell-pid)))
+        (message "Bitbake: error killing devshell process group in docker")))
     (delete-file bitbake-devshell-flag-file)))
 
 (defun bitbake--devshell-argument ()
