@@ -371,7 +371,7 @@ binary and BUILD-DIRECTORY as the build directory."
   (unless bitbake-current-poky-directory
     (user-error "No bitbake server running"))
   (message "Bitbake: stopping server")
-  (with-demoted-errors
+  (with-demoted-errors "bitbake-stop-server: error: %S"
       (bitbake-s-command (format "bitbake --kill-server --remote-server=%s:%d"
                                  bitbake-current-server-host
                                  bitbake-current-server-port)
@@ -1034,7 +1034,7 @@ customize `bitbake-devshell-function'."
   (pcase (string-split command)
     (`(,(pred (string-suffix-p "oe-gnome-terminal-phonehome"))
        ,pidfile
-       ,task-command)
+       ,_task-command)
      (with-temp-buffer
        (process-file-shell-command (format "while ! [ -s %s ]; do sleep 1; done; cat %s"
                                            pidfile
@@ -1066,6 +1066,7 @@ customize `bitbake-devshell-function'."
           (message "Bitbake: error creating task fifo")))))
 
 (defun bitbake-devshell-listen ()
+  "Start a process to wait for contact from devshell-launcher.sh."
   (when (process-live-p bitbake--current-devshell-listener)
     (kill-process bitbake--current-devshell-listener))
   (let* ((default-directory bitbake-current-support-directory)
@@ -1074,7 +1075,7 @@ customize `bitbake-devshell-function'."
                                 "cat"
                                 "emacs-bitbake-fifo")))
     (set-process-filter p
-                        #'(lambda (process s)
+                        #'(lambda (_process s)
                             (let ((args (string-split (string-trim s) "\n")))
                               (message "Bitbake: from fifo: %S" args)
                               (apply 'bitbake-devshell args))))
@@ -1131,6 +1132,10 @@ Expects one format argument: the PID of the Bitbake devshell process.")
         ;; window we're going to use.
         (pop-to-buffer buffer)
         (with-current-buffer buffer
+          ;; these two are buffer-local in `term-mode'. define them
+          ;; here to pacify the byte compiler.
+          (defvar term-height)
+          (defvar term-width)
           (let ((proc (get-buffer-process buffer))) ; Blast any old process.
             (when proc (delete-process proc)))
           (term-mode)
