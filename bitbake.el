@@ -161,6 +161,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defvar bitbake-recipes-cache '() "Cache of bitbake recipes.")
 (defvar bitbake-recipe-variables-cache '() "Cache of bitbake recipe variables.")
 (defvar bitbake-recipe-tasks-cache '() "Cache of bitbake recipe variables.")
+(defvar bitbake-system-variables-cache '() "Cache of bitbake system variables.")
 (defvar bitbake-recipe-history nil "History list of recipe names entered in the minibuffer.")
 (defvar bitbake-image-history nil "History list of image names entered in the minibuffer.")
 (defvar bitbake-task-history nil "History list of task names entered in the minibuffer.")
@@ -172,6 +173,8 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defvar bitbake-buffer-prompt-regexp (concat "^" (regexp-quote bitbake-buffer-prompt)) "A regexp matching the prompt.")
 (defvar bitbake-layers-cache nil "Cache of bitbake layers.")
 (defvar bitbake--current-devshell-listener nil)
+(defvar bitbake-system-variables '("BBPATH" "BB_NUMBER_THREADS" "MACHINE")
+  "List of bitbake variables to keep track of, independent of individual recipes.")
 (defconst bitbake-load-base (file-name-directory load-file-name))
 (defconst bitbake-devshell-fragment "bitbake-el-devshell.conf"
   "Config fragment to use emacsclient in devshell command.")
@@ -337,6 +340,7 @@ binary and BUILD-DIRECTORY as the build directory."
   ;; cleanup caches
   (setq bitbake-recipes-cache '()
         bitbake-recipe-variables-cache '()
+        bitbake-system-variables-cache '()
         bitbake-recipe-tasks-cache '()
         bitbake-layers-cache '())
 
@@ -382,6 +386,7 @@ binary and BUILD-DIRECTORY as the build directory."
     (kill-process bitbake--current-devshell-listener))
   (setq bitbake-recipes-cache nil
         bitbake-recipe-variables-cache nil
+        bitbake-system-variables-cache nil
         bitbake-recipe-tasks-cache nil
         bitbake-layers-cache nil
         bitbake-current-server-host nil
@@ -570,6 +575,27 @@ If FETCH is non-nil, invalidate cache and fetch the variables again."
 
 If FETCH is non-nil, invalidate cache and fetch the variables again."
   (cdr (assoc variable (bitbake-recipe-variables recipe fetch))))
+
+(defun bitbake-system-variables (&optional fetch)
+  "Return the bitbake variables
+
+If FETCH is non-nil, invalidate cache and fetch the variables again.
+Variables to be cached are defined in `bitbake-system-variables'."
+  (when (or fetch (null bitbake-system-variables-cache))
+    (message "Bitbake: fetching system variables")
+    (bitbake-s-command (format "bitbake -e") "Unable to fetch system variables")
+    (setq bitbake-system-variables-cache
+          (let ((vars (bitbake-parse-recipe-variables
+                       (bitbake-capture-buffer))))
+            (mapcar (lambda (v) (assoc v vars))
+                    bitbake-system-variables))))
+  bitbake-system-variables-cache)
+
+(defun bitbake-system-variable (variable &optional fetch)
+  "Return the value of VARIABLE, independent of any recipe.
+
+If FETCH is non-nil, invalidate cache and fetch the variables again."
+  (cdr (assoc variable (bitbake-system-variables fetch))))
 
 (defun bitbake-uuid ()
   "Generate a random UUID."
