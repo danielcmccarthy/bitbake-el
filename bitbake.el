@@ -441,6 +441,11 @@ If COMMAND fails, raise `user-error' with MESSAGE."
         ;; Mark the output region for the parser function like
         ;; `shell-command' does.
         (set-mark (point))
+        (goto-char p)
+        ;; Break up long lines from bitbake's progress bars to prevent
+        ;; regexp stack overflow.
+        (while (search-forward "\r" nil t)
+          (replace-match "\n" nil t))
         (goto-char p)))))
 
 (defun bitbake-fetch-recipes ()
