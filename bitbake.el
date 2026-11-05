@@ -829,6 +829,7 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
       (message "Bitbake: copy image to %s" bitbake-flash-device)
       (bitbake-shell-command (format "dd if=%s of=%s bs=32M" bitbake-last-disk-image bitbake-flash-device)))))
 
+;;; Utilities
 
 (defun bitbake-create-bbappend (recipe layer)
   "Visit a .bbappend file for RECIPE in LAYER."
@@ -853,6 +854,69 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
     (find-file (file-name-concat bbappend-path
                                  (format "%s_%%.bbappend"
                                          recipe)))))
+
+(defun bitbake--search-path (f paths)
+  (catch 'found
+    (dolist (x paths)
+      (let ((name (funcall f x)))
+        (and (file-exists-p name)
+             (throw 'found name))))))
+
+(defun bitbake-find-include (filename)
+  "Search bitbake path for FILENAME and visit it if found."
+  (interactive
+   (list (read-string "Find bitbake include file: "
+                      (thing-at-point 'filename)
+                      'bitbake-include-history)))
+  (let* ((bbpath (mapcar #'bitbake--remote-path
+                         (split-string
+                          (bitbake-system-variable "BBPATH")
+                          ":")))
+         (path
+          (bitbake--search-path (lambda (dir)
+                                  (file-name-concat dir filename))
+                                (if (buffer-file-name)
+                                    (cons (file-name-directory
+                                           (buffer-file-name))
+                                          bbpath)
+                                  bbpath))))
+    (if path
+        (find-file path)
+      (message "Bitbake: %s not found in BBPATH" filename))))
+
+(defun bitbake-find-class (classname)
+  "Visit the .bbclass file defining CLASSNAME."
+  (interactive
+   (list (read-string "Bitbake class: "
+                      (thing-at-point 'symbol)
+                      'bitbake-class-history)))
+  (let* ((class-file (concat classname ".bbclass"))
+         (bbpath (split-string
+                  (bitbake-system-variable "BBPATH")
+                  ":"))
+         ;; Search order from bitbake manual § 4.4.9. classes-recipe
+         ;; is used by the `inherit' keyword in recipes;
+         ;; classes-global is used by `INHERIT' in config files. We
+         ;; search both.
+         (path
+          (or (bitbake--search-path (lambda (dir)
+                                      (bitbake--remote-path dir
+                                                            "/classes-recipe/"
+                                                            class-file))
+                                    bbpath)
+              (bitbake--search-path (lambda (dir)
+                                      (bitbake--remote-path dir
+                                                            "/classes-global/"
+                                                            class-file))
+                                    bbpath)
+              (bitbake--search-path (lambda (dir)
+                                      (bitbake--remote-path dir
+                                                            "/classes/"
+                                                            class-file))
+                                    bbpath))))
+    (if path
+        (find-file path)
+      (message "Bitbake: %s not found in BBPATH" class-file))))
 
 ;;; bitbake-layers
 
