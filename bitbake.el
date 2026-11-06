@@ -923,6 +923,34 @@ The hdd image is based on WKS definition file and bitbake IMAGE, see `bitbake-hd
         (find-file path)
       (message "Bitbake: %s not found in BBPATH" class-file))))
 
+(defun bitbake-find-source (path &optional recipe)
+  "Visit the Bitbake metadata source file at point.
+
+This is intended to work on file:// paths in SRC_URI. It uses the value
+of FILESPATH for the recipe in the current buffer; with a prefix arg,
+prompt for a recipe name."
+  (interactive (list (or (thing-at-point 'url)
+                         (read-string "Find bitbake source file: "
+                                      (thing-at-point 'filename)
+                                      'bitbake-source-file-history))))
+  (let ((r (or recipe
+               (and current-prefix-arg
+                    (bitbake-read-recipe))
+               (bitbake-buffer-recipe))))
+    (if (member r (bitbake-recipe-names))
+        (setq recipe r)
+      (error "Unrecognized recipe '%s'" r)))
+  (setq path (string-remove-prefix "file://" path))
+  (let* ((filespath (mapcar #'bitbake--remote-path
+                            (split-string
+                             (bitbake-recipe-variable "FILESPATH" recipe)
+                             ":")))
+         (p (bitbake--search-path (lambda (dir)
+                                    (file-name-concat dir path))
+                                  filespath)))
+    (when p
+      (find-file p))))
+
 ;;; bitbake-layers
 
 (defun bitbake-parse-layers (buffer)
