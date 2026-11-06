@@ -142,11 +142,18 @@ intended working directory of the devshell."
   :group 'bitbake)
 
 (defcustom bitbake-yocto-manual-url
-  "https://docs.yoctoproject.org/ref-manual/variables.html#term-%s"
+  'working-directory-version
   "URL of the Yocto reference manual.
 
-Should be a format string with one '\\=%s' directive for a variable name."
-  :type '(string)
+If the value is \\='working-directory-version, bitbake.el will try to
+find the manual corresponding to DISTRO_VERSION in
+`bitbake-poky-directory'. Otherwise, the value should be a format
+string with one '\\=%s' directive for a variable name."
+  :type '(choice string
+                 (const :tag "Latest Yocto version"
+                        "https://docs.yoctoproject.org/ref-manual/variables.html#term-%s")
+                 (const :tag "Working directory's version"
+                        working-directory-version))
   :group 'bitbake)
 
 ;;; Local variables
@@ -173,7 +180,7 @@ Should be a format string with one '\\=%s' directive for a variable name."
 (defvar bitbake-buffer-prompt-regexp (concat "^" (regexp-quote bitbake-buffer-prompt)) "A regexp matching the prompt.")
 (defvar bitbake-layers-cache nil "Cache of bitbake layers.")
 (defvar bitbake--current-devshell-listener nil)
-(defvar bitbake-system-variables '("BBPATH" "BB_NUMBER_THREADS" "MACHINE")
+(defvar bitbake-system-variables '("BBPATH" "BB_NUMBER_THREADS" "DISTRO_VERSION" "MACHINE")
   "List of bitbake variables to keep track of, independent of individual recipes.")
 (defconst bitbake-load-base (file-name-directory load-file-name))
 (defconst bitbake-devshell-fragment "bitbake-el-devshell.conf"
@@ -1400,9 +1407,14 @@ To use a specific version of the reference manual, customize `bitbake-yocto-manu
                                     nil
                                     'bitbake-variable-documentation-history
                                     var-at-point))))
-  (if (string-empty-p variable)
-      (message "No variable specified.")
-    (browse-url (format bitbake-yocto-manual-url variable))))
+  (let ((url (if (eq bitbake-yocto-manual-url 'working-directory-version)
+                 (concat (format "https://docs.yoctoproject.org/%s/ref-manual/variables.html"
+                                 (bitbake-system-variable "DISTRO_VERSION"))
+                         "#term-%s")
+               bitbake-yocto-manual-url)))
+    (if (string-empty-p variable)
+        (message "No variable specified.")
+      (browse-url (format url variable)))))
 
 ;;;###autoload
 (define-derived-mode bitbake-mode prog-mode
