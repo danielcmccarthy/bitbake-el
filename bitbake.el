@@ -1375,7 +1375,7 @@ For detail, see `comment-dwim'."
       (2 '(face font-lock-keyword-face) nil t)
       (3 '(face font-lock-function-name-face)))
      ;; other keywords
-     ("^\\(include\\(_all\\)?\\|require\\|inherit\\(_defer\\)?\\|deltask\\|export\\|unset\\)\\_>" . font-lock-keyword-face)
+     ("^\\(include\\(_all\\)?\\|require\\|inherit\\(_defer\\)?\\|deltask\\|export\\|unset\\|EXPORT_FUNCTIONS\\)\\_>" . font-lock-keyword-face)
      ;; do_deploy[depends] ??=
      ("^\\(export *\\)?\\([a-zA-Z0-9\-_+.${}/~]+\\(\\[[a-zA-Z0-9\-_+.${}/~]+\\]\\)?\\(:[a-zA-Z0-9\-_+.${}/~]+\\)*\\) *\\(=\\|\\?=\\|\\?\\?=\\|:=\\|+=\\|=+\\|.=\\|=.\\)" 2 font-lock-variable-name-face)
      )))
