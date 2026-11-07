@@ -1,10 +1,11 @@
 ;;; bitbake.el --- Running bitbake from emacs  -*- lexical-binding: t; -*-
 
 ;; Author: Damien Merenne
-;; URL: https://github.com/canatella/bitbake-el
+;; Maintainer: Dan McCarthy
+;; URL: https://github.com/danielcmccarthy/bitbake-el
 ;; Created: 2014-02-11
-;; Keywords: convenience
-;; Version: 0.1
+;; Keywords: tools convenience
+;; Version: 0.2
 ;; Package-Requires: ((emacs "25") (dash "2.6.0") (polymode "20260505.1803") (s "1.10.0"))
 
 ;; This file is NOT part of GNU Emacs.
