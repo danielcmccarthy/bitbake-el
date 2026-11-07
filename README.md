@@ -17,6 +17,8 @@ emacs. Its main features are:
 * a major mode for editing recipes, using `polymode` to support Python
   and shell syntax.
 
+![Screenshot showing two bitbake source buffers and a menuconfig task running](screenshot.png)
+
 ## Installing
 
 This package is available on Melpa:
@@ -36,12 +38,22 @@ Now that the server is started, you can execute tasks for the current
 recipe or any recipe by running `M-x bitbake-task`. There are shortcut for
 the most common task, see the BitBake menu in Bitbake minor mode.
 
+#### Working remotely with TRAMP
+
+You can work over SSH or inside a Docker container (or both at the same time) by using TRAMP syntax in `bitbake-poky-directory` and `bitbake-build-directory`; e.g.:
+
+```elisp
+(setq bitbake-poky-directory "/ssh:USERNAME@HOST:/path/to/poky")
+```
+
+See [the TRAMP manual](https://www.gnu.org/software/tramp/#File-name-syntax-1) for details.
+
 ### Deploying recipes
 
 If your target device supports ssh and writing to the root file system,
 you can use `M-x bitbake-deploy` to deploy a recipe on the device. It will
 use tar to create an archive of the files generated on the host and
-deploy them on the device. You should make sure that the recipe has
+deploy them on the device. You should make sure that the recipegk has
 already been build before or use the `M-x bitbake-recompile-deploy`
 command.
 
@@ -78,11 +90,15 @@ variable with `browse-url`.
 `M-x bitbake-create-bbappend` opens a `.bbappend` file for a recipe in
 a layer of your choice.
 
+`M-x bitbake-find-class` locates `.bbclass` files from `inherit`
+statements. Likewise `M-x bitbake-find-include` for `include/require`,
+and `M-x bitbake-find-source` for `file://` URIs in `SRC_URI`.
+
 ## Development
 
 Development is done on
 [GitHub](https://github.com/danielcmccarthy/bitbake-el). Any bugs or patches
-are welcome.
+are welcome. See [NEWS.md](NEWS.md) for a summary of recent changes.
 
 ## Contributors
 
